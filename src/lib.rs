@@ -1,18 +1,25 @@
+use midi_processor::MidiProcessor;
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
 mod params;
+mod midi_processor;
 
 use crate::params::MidiTransposerParams;
 
 struct MidiTransposer {
     params: Arc<MidiTransposerParams>,
+
+    processor: MidiProcessor,
 }
 
 impl Default for MidiTransposer {
     fn default() -> Self {
+        let params = Arc::new(MidiTransposerParams::default());
+        let processor = MidiProcessor::new(params.clone());
         Self {
-            params: Arc::new(MidiTransposerParams::default()),
+            params,
+            processor,
         }
     }
 }
@@ -46,42 +53,22 @@ impl Plugin for MidiTransposer {
         self.params.clone()
     }
 
+    // TODO : add processor initialization (arpeggiator samplerate)
+
     fn process(
         &mut self,
         _buffer: &mut Buffer,
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        // Process the incoming events.
+        self.processor.clear_events();
         while let Some(event) = context.next_event() {
-            match event {
-                NoteEvent::NoteOn {
-                    timing,
-                    voice_id,
-                    channel,
-                    note,
-                    velocity,
-                } => context.send_event(NoteEvent::NoteOn {
-                    timing,
-                    voice_id,
-                    channel: 15 - channel,
-                    note: 127 - note,
-                    velocity: 1.0 - velocity,
-                }),
-                NoteEvent::NoteOff {
-                    timing,
-                    voice_id,
-                    channel,
-                    note,
-                    velocity,
-                } => context.send_event(NoteEvent::NoteOff {
-                    timing,
-                    voice_id,
-                    channel: 15 - channel,
-                    note: 127 - note,
-                    velocity: 1.0 - velocity,
-                }),
-                _ => (),
-            }
+            self.processor.process_event(event);
+        }
+        // Send the processed events.
+        for event in self.processor.get_events() {
+            context.send_event(*event);
         }
 
         ProcessStatus::Normal
