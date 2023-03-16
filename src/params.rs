@@ -1,30 +1,66 @@
 use nih_plug::prelude::*;
 
+/**
+ * Represents one interval slider for a note.
+ */
+#[derive(Params)]
+pub struct IntervalParam {
+    #[id = "interval"]
+    pub interval: IntParam,
+}
+
+/**
+ * Reprensents a note panel.
+ * It can be muted and/or transposed, and it holds 12 intervals
+ */
+#[derive(Params)]
+pub struct NoteParam {
+    #[id = "active"]
+    pub active: BoolParam,
+    #[id = "transpose"]
+    pub transpose: IntParam,
+    #[nested(array, group = "Intervals")]
+    pub intervals: [IntervalParam; 12],
+}
+
 #[derive(Params)]
 pub struct MidiTransposerParams {
-    /// The parameter's ID is used to identify the parameter in the wrappred plugin API. As long as
-    /// these IDs remain constant, you can rename and reorder these fields as you wish. The
-    /// parameters are exposed to the host in the same order they were defined.
     #[id = "in_channel"]
     pub in_channel: IntParam,
     #[id = "out_channel"]
-    pub out_channel: IntParam
+    pub out_channel: IntParam,
+    #[id = "octave_transpose"]
+    pub octave_transpose: IntParam,
+    #[nested(array, group = "Notes")]
+    pub notes: [NoteParam; 12],
 }
 
 impl Default for MidiTransposerParams {
     fn default() -> Self {
+        let all_notes: [usize; 12] = core::array::from_fn(|i| i + 1);
         Self {
-            in_channel: IntParam::new(
-                "Input Channel",
-                1,
-                IntRange::Linear { min: 0, max: 16 }
+            in_channel: IntParam::new("Input Channel", 1, IntRange::Linear { min: 0, max: 16 }),
+            out_channel: IntParam::new("Output Channel", 1, IntRange::Linear { min: 0, max: 16 }),
+            octave_transpose: IntParam::new(
+                "Octave Transpose",
+                0,
+                IntRange::Linear { min: -1, max: 4 },
             ),
-            out_channel: IntParam::new(
-                "Output Channel",
-                1,
-                IntRange::Linear { min: 0, max: 16 }
-            )
-            
+            notes: all_notes.map(|note| NoteParam {
+                active: BoolParam::new(format!("Activate {note}"), true),
+                transpose: IntParam::new(
+                    format!("Transpose {note}"),
+                    0,
+                    IntRange::Linear { min: -12, max: 12 },
+                ),
+                intervals: all_notes.map(|interval| IntervalParam {
+                    interval: IntParam::new(
+                        format!("Interval {note} {interval}"),
+                        0,
+                        IntRange::Linear { min: -12, max: 12 },
+                    ),
+                }),
+            }),
         }
     }
 }
