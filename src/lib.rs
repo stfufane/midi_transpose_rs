@@ -2,8 +2,8 @@ use midi_processor::MidiProcessor;
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
-mod params;
 mod midi_processor;
+mod params;
 
 use crate::params::MidiTransposerParams;
 
@@ -17,10 +17,7 @@ impl Default for MidiTransposer {
     fn default() -> Self {
         let params = Arc::new(MidiTransposerParams::default());
         let processor = MidiProcessor::new(params.clone());
-        Self {
-            params,
-            processor,
-        }
+        Self { params, processor }
     }
 }
 
@@ -57,14 +54,15 @@ impl Plugin for MidiTransposer {
 
     fn process(
         &mut self,
-        _buffer: &mut Buffer,
+        buffer: &mut Buffer,
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         // Process the incoming events.
         self.processor.clear_events();
         while let Some(event) = context.next_event() {
-            self.processor.process_event(event);
+            self.processor
+                .process_event(&event, buffer.samples(), context.transport());
         }
         // Send the processed events.
         for event in self.processor.get_events() {

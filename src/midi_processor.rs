@@ -1,5 +1,5 @@
+use nih_plug::{context::process::Transport, prelude::NoteEvent};
 use std::sync::Arc;
-use nih_plug::prelude::NoteEvent;
 
 use crate::params::MidiTransposerParams;
 
@@ -49,43 +49,32 @@ impl MidiProcessor {
             params,
             midi_events: Vec::new(),
         }
-    }   
+    }
 
     /**
      * Process a midi event
      */
-    pub fn process_event(&mut self, event: NoteEvent<()>) {
+    pub fn process_event(
+        &mut self,
+        event: &NoteEvent<()>,
+        _nb_samples: usize,
+        _transport: &Transport,
+    ) {
         // TODO: read parameters to map notes
+        // Exclude notes that are not from the filtered channel
+        if self.params.in_channel.value() > 0
+            && (event.channel() == None
+                || event.channel() != Some(self.params.in_channel.value() as u8))
+        {
+            return;
+        }
         match event {
-            NoteEvent::NoteOn {
-                timing,
-                voice_id,
-                channel,
-                note,
-                velocity,
-            } => self.midi_events.push(NoteEvent::NoteOn {
-                timing,
-                voice_id,
-                channel: 15 - channel,
-                note: 127 - note,
-                velocity: 1.0 - velocity,
-            }),
-            NoteEvent::NoteOff {
-                timing,
-                voice_id,
-                channel,
-                note,
-                velocity,
-            } => self.midi_events.push(NoteEvent::NoteOff {
-                timing,
-                voice_id,
-                channel: 15 - channel,
-                note: 127 - note,
-                velocity: 1.0 - velocity,
-            }),
-            _ => (),
+            NoteEvent::NoteOn { .. } | NoteEvent::NoteOff { .. } => self.map_note(event),
+            _ => self.midi_events.push(*event),
         }
     }
+
+    fn map_note(&mut self, _event: &NoteEvent<()>) {}
 
     /**
      * Clear the processed events
