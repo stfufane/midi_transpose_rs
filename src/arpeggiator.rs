@@ -1,4 +1,4 @@
-use crate::note_state::NoteState;
+use crate::note_state::NoteInfo;
 
 pub struct Arpeggiator 
 {
@@ -7,7 +7,7 @@ pub struct Arpeggiator
     next_beat_position: i64,
     time: i32,
     current_index: usize,
-    note_state: NoteState,
+    note_info: NoteInfo,
 }
 
 impl Default for Arpeggiator {
@@ -18,7 +18,7 @@ impl Default for Arpeggiator {
             next_beat_position: 0,
             time: 0,
             current_index: 0,
-            note_state: NoteState::default(),
+            note_info: NoteInfo::default(),
         }
     }
 }
@@ -31,7 +31,7 @@ impl Arpeggiator {
             next_beat_position: 0,
             time: 0,
             current_index: 0,
-            note_state: NoteState::default(),
+            note_info: NoteInfo::default(),
         }
     }
 
@@ -40,7 +40,7 @@ impl Arpeggiator {
         self.next_beat_position = 0;
         self.time = 0;
         self.current_index = 0;
-        self.note_state.reset();
+        self.note_info.reset();
     }
 
     pub fn restart(&mut self) {

@@ -1,13 +1,13 @@
 
 #[derive(Debug, Clone, Copy)]
-pub struct NoteState {
+pub struct NoteInfo {
     pub note: Option<u8>,
     pub channel: u8,
     pub velocity: f32,
     pub timing: u32,
 }
 
-impl Default for NoteState {
+impl Default for NoteInfo {
     fn default() -> Self {
         Self {
             note: None,
@@ -18,7 +18,7 @@ impl Default for NoteState {
     }
 }
 
-impl NoteState {
+impl NoteInfo {
     pub fn new(note: u8, channel: u8, velocity: f32, timing: u32) -> Self {
         Self {
             note: Some(note),

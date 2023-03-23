@@ -2,7 +2,7 @@ use nih_plug::{context::process::Transport, prelude::NoteEvent};
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::note_state::NoteState;
+use crate::note_info::NoteInfo;
 use crate::params::MidiTransposerParams;
 
 pub struct MidiProcessor {
@@ -17,19 +17,19 @@ pub struct MidiProcessor {
     midi_events: Vec<NoteEvent<()>>,
 
     /**
-     * The last note on that has been pressed
+     * The last note that has been pressed
      */
-    last_note_on: NoteState,
+    current_note_held: NoteInfo,
 
     /**
-     * The notes that are currently on
+     * The notes that are currently held
      */
-    current_input_notes_on: Vec<NoteState>,
+    notes_held: Vec<NoteInfo>,
 
     /**
      * The mapped notes that are generated from the last note held.
      */
-    generated_chord: Vec<NoteState>,
+    generated_chord: Vec<NoteInfo>,
 }
 
 impl MidiProcessor {
@@ -37,8 +37,8 @@ impl MidiProcessor {
         Self {
             params,
             midi_events: Vec::new(),
-            last_note_on: NoteState::default(),
-            current_input_notes_on: Vec::new(),
+            current_note_held: NoteInfo::default(),
+            notes_held: Vec::new(),
             generated_chord: Vec::new(),
         }
     }
@@ -77,7 +77,7 @@ impl MidiProcessor {
                 channel,
                 ..
             } => {
-                let note_state = NoteState::new(
+                let note_info = NoteInfo::new(
                     *note,
                     if output_channel > 0 {
                         output_channel
@@ -88,8 +88,8 @@ impl MidiProcessor {
                     *timing,
                 );
                 match event {
-                    NoteEvent::NoteOn { .. } => self.process_note_on(&note_state),
-                    NoteEvent::NoteOff { .. } => self.process_note_off(&note_state),
+                    NoteEvent::NoteOn { .. } => self.process_note_on(&note_info),
+                    NoteEvent::NoteOff { .. } => self.process_note_off(&note_info),
                     _ => (),
                 }
             }
@@ -97,62 +97,68 @@ impl MidiProcessor {
         }
     }
 
-    fn process_note_on(&mut self, note_state: &NoteState) {
+    /**
+     * It's always the last note pressed that is used to generate the chord.
+     * We keep track of all the notes pressed so when one is released, the previous one is played.
+     */
+    fn process_note_on(&mut self, note_info: &NoteInfo) {
         // Add the played note to the vector of current notes held.
-        self.current_input_notes_on.push(*note_state);
+        self.notes_held.push(*note_info);
 
         // If the note changed, turn off the previous notes before adding the new ones.
-        if note_state.note != self.last_note_on.note && self.last_note_on.is_active() {
-            self.stop_chord(&note_state.velocity, &note_state.timing);
+        if note_info.note != self.current_note_held.note && self.current_note_held.is_active() {
+            self.stop_chord(&note_info.velocity, &note_info.timing);
         }
 
         // Play the received note with the associated mapping.
-        self.play_mapped_notes(note_state);
+        self.build_and_play_chord(note_info);
     }
 
-    fn process_note_off(&mut self, note_state: &NoteState) {
+    /**
+     * For notes off, we have to check if the note released is the one currently played or one in the pool of notes held.
+     */
+    fn process_note_off(&mut self, note_info: &NoteInfo) {
         // For every note off, remove the received note from the vector of current notes held.
-        self.current_input_notes_on
-            .retain(|ns| ns.note != note_state.note);
+        self.notes_held.retain(|ns| ns.note != note_info.note);
 
         // Turn off the corresponding notes for the current note off if it's the same as the last played note.
         // Otherwise, it means the released note was not active, so we don't need to do anything (case of multiple notes held)
-        if note_state.note == self.last_note_on.note {
-            self.stop_chord(&note_state.velocity, &note_state.timing);
+        if note_info.note == self.current_note_held.note {
+            self.stop_chord(&note_info.velocity, &note_info.timing);
 
             // If there are no more notes held, stop the current notes.
-            if self.current_input_notes_on.is_empty() {
-                self.last_note_on.reset();
+            if self.notes_held.is_empty() {
+                self.current_note_held.reset();
                 self.generated_chord.clear();
             } else {
                 // If there were still some notes held, play the last one.
-                let new_note_state = &self.current_input_notes_on.last().unwrap().clone();
-                self.play_mapped_notes(new_note_state);
+                let new_note_state = &self.notes_held.last().unwrap().clone();
+                self.build_and_play_chord(new_note_state);
             }
         }
     }
 
-    fn play_mapped_notes(&mut self, note_state: &NoteState) {
-        self.map_notes(note_state);
-        self.play_chord(&note_state.timing);
-        self.last_note_on = *note_state;
+    fn build_and_play_chord(&mut self, note_info: &NoteInfo) {
+        self.build_chord(note_info);
+        self.play_chord(&note_info.timing);
+        self.current_note_held = *note_info;
     }
 
     /**
      * Calculate the generated chord from the last note held given the parameters.
      */
-    fn map_notes(&mut self, note_state: &NoteState) {
+    fn build_chord(&mut self, note_info: &NoteInfo) {
         self.generated_chord.clear();
-        let base_note = note_state.note.unwrap() % 12;
+        let base_note = note_info.note.unwrap() % 12;
         // Exit if the transposition is deactivated for this note.
         if !self.params.notes[base_note as usize].active.value() {
             // Just play the base note.
-            self.generated_chord.push(*note_state);
+            self.generated_chord.push(*note_info);
             return;
         }
 
         // Create a copy of the note state to map with the transposition.
-        let mut mapped_state = *note_state;
+        let mut mapped_state = *note_info;
         let octave_transpose = self.params.octave_transpose.value() as u8;
         let note_transpose = self.params.notes[base_note as usize].transpose.value() as i8;
 
@@ -184,11 +190,11 @@ impl MidiProcessor {
             if mapped_note > 127 {
                 continue;
             }
-            self.generated_chord.push(NoteState::new(
+            self.generated_chord.push(NoteInfo::new(
                 mapped_note,
-                note_state.channel,
-                note_state.velocity,
-                note_state.timing,
+                note_info.channel,
+                note_info.velocity,
+                note_info.timing,
             ));
         }
     }
@@ -197,12 +203,12 @@ impl MidiProcessor {
      * Play all the notes in the generated chord
      */
     fn play_chord(&mut self, timing: &u32) {
-        for note_state in &self.generated_chord {
+        for note_info in &self.generated_chord {
             self.midi_events.push(NoteEvent::NoteOn {
-                note: note_state.note.unwrap(),
+                note: note_info.note.unwrap(),
                 timing: *timing,
-                velocity: note_state.velocity,
-                channel: note_state.channel,
+                velocity: note_info.velocity,
+                channel: note_info.channel,
                 voice_id: None,
             });
         }
@@ -212,12 +218,12 @@ impl MidiProcessor {
      * Stop all the notes in the generated chord
      */
     fn stop_chord(&mut self, velocity: &f32, timing: &u32) {
-        for note_state in &self.generated_chord {
+        for note_info in &self.generated_chord {
             self.midi_events.push(NoteEvent::NoteOff {
-                note: note_state.note.unwrap(),
+                note: note_info.note.unwrap(),
                 timing: *timing,
                 velocity: *velocity,
-                channel: note_state.channel,
+                channel: note_info.channel,
                 voice_id: None,
             });
         }

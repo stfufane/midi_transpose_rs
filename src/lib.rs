@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 mod midi_processor;
 mod params;
-mod note_state;
+mod note_info;
 // mod arpeggiator;
 
 use crate::params::MidiTransposerParams;
