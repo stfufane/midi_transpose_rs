@@ -2,16 +2,19 @@ use midi_processor::MidiProcessor;
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
+mod arpeggiator;
 mod midi_processor;
-mod params;
 mod note_info;
-// mod arpeggiator;
+mod params;
 
 use crate::params::MidiTransposerParams;
 
 struct MidiTransposer {
     params: Arc<MidiTransposerParams>,
 
+    /**
+     * The midi processor
+     */
     processor: MidiProcessor,
 }
 
@@ -52,7 +55,25 @@ impl Plugin for MidiTransposer {
         self.params.clone()
     }
 
-    // TODO : add processor initialization (arpeggiator samplerate)
+    /**
+     * Retrieve the sample rate to initialize the arpeggiator
+     */
+    fn initialize(
+        &mut self,
+        _audio_io_layout: &AudioIOLayout,
+        buffer_config: &BufferConfig,
+        _context: &mut impl InitContext<Self>,
+    ) -> bool {
+        self.processor
+            .arpeggiator
+            .set_samplerate(buffer_config.sample_rate);
+
+        true
+    }
+
+    fn reset(&mut self) {
+        self.processor.arpeggiator.reset();
+    }
 
     fn process(
         &mut self,
@@ -63,9 +84,15 @@ impl Plugin for MidiTransposer {
         // Process the incoming events.
         self.processor.clear_events();
         while let Some(event) = context.next_event() {
-            self.processor
-                .process_event(&event, buffer.samples(), context.transport());
+            self.processor.process_event(&event);
         }
+
+        // Process the arpeggiator
+        if self.params.arp.activated.value() {
+            self.processor
+                .process_arp(buffer.samples(), context.transport());
+        }
+
         // Send the processed events.
         for event in self.processor.get_events() {
             context.send_event(*event);
