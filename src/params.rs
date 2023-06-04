@@ -1,5 +1,10 @@
 use nih_plug::prelude::*;
 
+const NOTE_NAMES: [&str; 12] = [
+    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+];
+const NB_INTERVALS: usize = 6;
+
 /**
  * Represents one interval slider for a note.
  */
@@ -20,7 +25,7 @@ pub struct NoteParam {
     #[id = "transpose"]
     pub transpose: IntParam,
     #[nested(array, group = "Intervals")]
-    pub intervals: [IntervalParam; 12],
+    pub intervals: [IntervalParam; NB_INTERVALS],
 }
 
 #[derive(Params)]
@@ -52,6 +57,7 @@ pub struct MidiTransposerParams {
 impl Default for MidiTransposerParams {
     fn default() -> Self {
         let all_notes: [usize; 12] = core::array::from_fn(|i| i + 1);
+        let all_intervals: [usize; NB_INTERVALS] = core::array::from_fn(|i| i + 1);
         Self {
             in_channel: IntParam::new("Input Channel", 1, IntRange::Linear { min: 0, max: 16 }),
             out_channel: IntParam::new("Output Channel", 1, IntRange::Linear { min: 0, max: 16 }),
@@ -63,19 +69,19 @@ impl Default for MidiTransposerParams {
             arp: ArpParams {
                 activated: BoolParam::new("Arp On", false),
                 synced: BoolParam::new("Arp Sync", false),
-                speed: FloatParam::new("Arp Speed", 1.0, FloatRange::Linear { min: 0.1, max: 10.0 }),
+                speed: FloatParam::new("Arp Speed", 1.0, FloatRange::Linear { min: 0.1, max: 1.0 }),
                 rate: IntParam::new("Arp Rate", 0, IntRange::Linear { min: 0, max: 8 }),
             },
             notes: all_notes.map(|note| NoteParam {
-                active: BoolParam::new(format!("Activate {note}"), true),
+                active: BoolParam::new(format!("Activate {}", NOTE_NAMES[note - 1]), true),
                 transpose: IntParam::new(
-                    format!("Transpose {note}"),
+                    format!("{} semitones transpose", NOTE_NAMES[note - 1]),
                     0,
                     IntRange::Linear { min: -12, max: 12 },
                 ),
-                intervals: all_notes.map(|interval| IntervalParam {
+                intervals: all_intervals.map(|interval| IntervalParam {
                     interval: IntParam::new(
-                        format!("Interval {note} {interval}"),
+                        format!("{} interval {interval}", NOTE_NAMES[note - 1]),
                         0,
                         IntRange::Linear { min: -12, max: 12 },
                     ),
