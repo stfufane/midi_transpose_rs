@@ -5,11 +5,22 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Windows : Debug the plugin inside a DAW",
+            "type": "cppvsdbg",
+            "request": "attach",
+            "processId": "${command:pickProcess}",
+            "internalConsoleOptions": "openOnSessionStart",
+            "symbolOptions": {
+                "searchPaths": ["${workspaceFolder}/target/debug", "${workspaceFolder}/target/profiling"],
+                "searchMicrosoftSymbolServer": false
+            }
+        },
+        {
+            "name": "MacOS : Debug the plugin inside a DAW",
             "type": "lldb",
             "request": "attach",
-            "name": "Debug the plugin inside a DAW",
-            "pid":"${command:pickMyProcess}",
-            "stopOnEntry": true
+            "pid": "${command:pickProcess}",
+            "internalConsoleOptions": "openOnSessionStart",
         }
     ]
 }
