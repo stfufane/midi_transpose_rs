@@ -7,13 +7,20 @@
             "label": "Build Debug Plugin",
             "type": "shell",
             "command": "cargo xtask bundle midi_transposer --profile profiling",
-            "problemMatcher": []
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
         },
         {
             "label": "Build Release Plugin",
             "type": "shell",
             "command": "cargo xtask bundle midi_transposer --release",
-            "problemMatcher": []
+            "problemMatcher": [],
+            "group": {
+                "kind": "build"
+            },
         }
     ]
 }
