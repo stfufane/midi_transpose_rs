@@ -1,7 +1,9 @@
 pub(crate) use crate::note_info::NoteInfo;
+use crate::params::ArpParams;
 
 pub(crate) struct Arpeggiator {
     samplerate: f32,
+    pub synced: bool,
     tempo: Option<f64>,
     num_samples: usize, // Defined at the beginning of each process
     division: f64,
@@ -15,9 +17,10 @@ impl Arpeggiator {
     pub fn new() -> Self {
         Self {
             samplerate: 0.0,
+            synced: false,
             tempo: None,
             num_samples: 0,
-            division: 0.0,
+            division: 1.0,
             next_beat_position: 0.0,
             time: 0,
             current_index: 0,
@@ -28,7 +31,7 @@ impl Arpeggiator {
     pub fn reset(&mut self) {
         self.tempo = None;
         self.num_samples = 0;
-        self.division = 0.0;
+        self.division = 1.0;
         self.next_beat_position = 0.0;
         self.time = 0;
         self.current_index = 0;
@@ -45,19 +48,33 @@ impl Arpeggiator {
     /**
      * Called every process to define the right information to process the arpeggiator
      */
-    pub fn set_process_info(&mut self, tempo: Option<f64>, num_samples: usize) {
+    pub fn set_process_info(&mut self, tempo: Option<f64>, num_samples: usize, params: &ArpParams) {
         self.tempo = tempo;
         self.num_samples = num_samples;
-        // TODO calculate some information here.
+        self.synced = params.synced.value();
+        let division = NOTE_DIVISIONS[params.rate.value() as usize].division;
+        if division != self.division {
+            self.division = division;
+            self.next_beat_position = 0.0;
+        }
     }
 
     pub fn restart(&mut self) {
         self.current_index = 0;
     }
 
+    fn get_note_duration(&mut self, speed: f32) -> u32 {
+        let tempo = self.tempo.unwrap_or(0.0);
+        if self.synced && tempo > 0.0 {
+            let samples_per_beat = self.samplerate as f64 / (tempo / 60.0);
+            return (samples_per_beat * self.division).ceil() as u32;
+        }
+
+        (self.samplerate * 0.1 * (0.1 + (5.0 - 5.0 * speed))) as u32
+    }
+
     pub fn arpeggiate_free(&mut self, speed: f32, timings: &mut Vec<u32>) {
-        // TODO: calculate the note duration from the BPM.
-        let note_duration = (self.samplerate * 0.1 * (0.1 + (5.0 - 5.0 * speed))) as u32;
+        let note_duration = self.get_note_duration(speed);
         if self.num_samples < note_duration.try_into().unwrap() {
             if (self.time + self.num_samples as u32) >= note_duration {
                 let timing = std::cmp::max(
@@ -79,19 +96,11 @@ impl Arpeggiator {
         }
     }
 
-    pub fn arpeggiate_sync(&mut self, beat_position: f64, rate: i32, timings: &mut Vec<u32>) {
+    pub fn arpeggiate_sync(&mut self, beat_position: f64, timings: &mut Vec<u32>) {
         let samples_per_beat = self.samplerate as f64 / (self.tempo.unwrap_or(60.0) / 60.0);
         let mut timing: u32 = 0;
 
         while timing < self.num_samples as u32 {
-            // Reset the position calculation if the division has changed.
-            let last_division = NOTE_DIVISIONS[rate as usize].division;
-            if self.division != last_division {
-                // Update the current division from parameter
-                self.division = last_division;
-                self.next_beat_position = 0.0;
-            }
-
             // We need to get the current quarter note and see what's the next candidate position to snap to the current time division.
             if self.next_beat_position == 0.0 {
                 let mut nb_divisions = 1;

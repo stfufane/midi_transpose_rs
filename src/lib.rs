@@ -211,6 +211,7 @@ impl MidiTransposer {
             // If there are no more notes held, stop the current notes.
             if self.notes_held.is_empty() {
                 self.current_note_held.reset();
+                self.generated_chord.clear();
 
                 // Stop the current note of the arpeggiator if it's running.
                 if self.arp.note_info.is_active() {
@@ -240,9 +241,7 @@ impl MidiTransposer {
      * Calculate the generated chord from the last note held given the parameters.
      */
     fn build_chord(&mut self, note_info: &NoteInfo) {
-        {
-            self.generated_chord.clear();
-        }
+        self.generated_chord.clear();
         let base_note = note_info.note.unwrap() % 12;
         // Exit if the transposition is deactivated for this note.
         if !self.params.notes[base_note as usize].active.value() {
@@ -329,15 +328,13 @@ impl MidiTransposer {
      */
     fn process_arp(&mut self, samples: usize, transport: &Transport) {
         // TODO later: define a callback for interval parameters to handle arpeggiator notes.
-        self.arp.set_process_info(transport.tempo, samples);
+        self.arp
+            .set_process_info(transport.tempo, samples, &self.params.arp);
         let mut timings: Vec<u32> = Vec::new();
 
-        if self.params.arp.synced.value() && transport.playing && transport.tempo.is_some() {
-            self.arp.arpeggiate_sync(
-                transport.pos_beats().unwrap_or(0.0),
-                self.params.arp.rate.value(),
-                &mut timings,
-            );
+        if self.arp.synced && transport.playing && transport.tempo.is_some() {
+            self.arp
+                .arpeggiate_sync(transport.pos_beats().unwrap_or(0.0), &mut timings);
         } else {
             self.arp
                 .arpeggiate_free(self.params.arp.speed.value(), &mut timings);
