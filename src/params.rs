@@ -1,3 +1,5 @@
+use std::sync::{atomic::AtomicBool, Arc};
+
 use nih_plug::prelude::*;
 
 const NOTE_NAMES: [&str; 12] = [
@@ -54,8 +56,8 @@ pub struct MidiTransposerParams {
     pub notes: [NoteParam; 12],
 }
 
-impl Default for MidiTransposerParams {
-    fn default() -> Self {
+impl MidiTransposerParams {
+    pub fn new(should_reset_arp: Arc<AtomicBool>) -> Self {
         let all_notes: [usize; 12] = core::array::from_fn(|i| i + 1);
         let all_intervals: [usize; NB_INTERVALS] = core::array::from_fn(|i| i + 1);
         Self {
@@ -67,7 +69,9 @@ impl Default for MidiTransposerParams {
                 IntRange::Linear { min: -1, max: 4 },
             ),
             arp: ArpParams {
-                activated: BoolParam::new("Arp On", false),
+                activated: BoolParam::new("Arp On/Off", false).with_callback(Arc::new(move |_| {
+                    should_reset_arp.store(true, std::sync::atomic::Ordering::Release);
+                })),
                 synced: BoolParam::new("Arp Sync", false),
                 speed: FloatParam::new("Arp Speed", 1.0, FloatRange::Linear { min: 0.1, max: 1.0 }),
                 rate: IntParam::new("Arp Rate", 0, IntRange::Linear { min: 0, max: 8 }),

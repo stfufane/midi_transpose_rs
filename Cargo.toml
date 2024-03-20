@@ -2,10 +2,10 @@
 name = "midi_transposer"
 version = "0.1.0"
 edition = "2021"
-authors = ["Stfufane <albanese.stephane@gmail.com>"]
+authors = ["Stfefane <albanese.stephane@gmail.com>"]
 license = "GPL-3.0-or-later"
 homepage = "https://github.com/stfufane"
-description = "A MIDI transposer"
+description = "A note to chords midi plugin"
 
 [workspace]
 members = ["xtask"]
