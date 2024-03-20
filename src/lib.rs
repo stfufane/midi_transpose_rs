@@ -17,23 +17,23 @@ enum ProcessorType {
 
 #[derive(Debug, Clone)]
 struct NotesState {
-    pub notes: Vec<NoteInfo>,
+    pub notes_held: Vec<NoteInfo>,
     pub current_note_held: Option<NoteInfo>,
-    pub current_chord: Vec<NoteInfo>,
+    pub current_chord: u128,
 }
 
 impl Default for NotesState {
     fn default() -> Self {
         Self {
-            notes: Vec::with_capacity(24),
+            notes_held: Vec::with_capacity(24),
             current_note_held: None,
-            current_chord: Vec::with_capacity(12),
+            current_chord: 0,
         }
     }
 }
 
 pub(crate) trait MidiProcessor {
-    fn process(&mut self, notes_state: NotesState, nb_samples: usize) -> ProcessStatus;
+    fn process(&mut self, notes_state: &NotesState, nb_samples: usize) -> ProcessStatus;
     fn arp_reset(&mut self, on_off: bool);
 }
 
@@ -68,30 +68,25 @@ struct MidiTransposer {
 
 impl MidiTransposer {
     fn process_note_on(&mut self, note_info: &NoteInfo) {
-        self.notes_state.notes.push(*note_info);
+        self.notes_state.notes_held.push(*note_info);
         self.notes_state.current_chord =
             ChordProcessor::build_chord(self.params.clone(), note_info);
         self.notes_state.current_note_held = Some(*note_info);
     }
 
     fn process_note_off(&mut self, note_info: &NoteInfo) {
-        self.notes_state.notes.retain(|n| n.note != note_info.note);
-        if self.notes_state.notes.is_empty() {
+        self.notes_state
+            .notes_held
+            .retain(|n| n.note != note_info.note);
+        if self.notes_state.notes_held.is_empty() {
             self.notes_state.current_note_held = None;
-            self.notes_state.current_chord = Vec::new();
+            self.notes_state.current_chord = 0;
         } else {
-            self.notes_state.current_note_held = Some(*self.notes_state.notes.last().unwrap());
+            self.notes_state.current_note_held = Some(*self.notes_state.notes_held.last().unwrap());
             self.notes_state.current_chord = ChordProcessor::build_chord(
                 self.params.clone(),
                 self.notes_state.current_note_held.as_ref().unwrap(),
             );
-        }
-    }
-
-    fn get_active_processor(&mut self) -> &mut dyn MidiProcessor {
-        match self.processor_type {
-            ProcessorType::Chord => &mut self.chord_processor,
-            ProcessorType::Arpeggio => &mut self.arp_processor,
         }
     }
 
@@ -235,9 +230,14 @@ impl Plugin for MidiTransposer {
             }
         }
 
-        let notes_state = self.notes_state.clone();
-        self.get_active_processor()
-            .process(notes_state, buffer.samples())
+        match self.processor_type {
+            ProcessorType::Chord => self
+                .chord_processor
+                .process(&self.notes_state, buffer.samples()),
+            ProcessorType::Arpeggio => self
+                .arp_processor
+                .process(&self.notes_state, buffer.samples()),
+        }
     }
 }
 

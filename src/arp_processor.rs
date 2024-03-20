@@ -19,7 +19,7 @@ impl Default for ArpProcessor {
 }
 
 impl MidiProcessor for ArpProcessor {
-    fn process(&mut self, notes_state: NotesState, _nb_samples: usize) -> ProcessStatus {
+    fn process(&mut self, notes_state: &NotesState, _nb_samples: usize) -> ProcessStatus {
         ProcessStatus::Normal
     }
 

@@ -20,4 +20,13 @@ impl NoteInfo {
         self.note = (self.note as i8 + transposition) as u8;
         self
     }
+
+    pub fn with_transposition(&self, transposition: i8) -> Self {
+        Self {
+            note: (self.note as i8 + transposition) as u8,
+            channel: self.channel,
+            velocity: self.velocity,
+            timing: self.timing,
+        }
+    }
 }
