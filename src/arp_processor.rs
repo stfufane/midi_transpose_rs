@@ -1,29 +1,28 @@
-use std::sync::Arc;
+use nih_plug::{context::process::ProcessContext, nih_trace, plugin::ProcessStatus};
 
-use nih_plug::{nih_trace, plugin::ProcessStatus};
-
-use crate::{note_info::NoteInfo, MidiProcessor, NotesState};
+use crate::{note_info::NoteInfo, MidiProcessor, MidiTransposer, NotesState};
 
 pub(crate) struct ArpProcessor {
-    arp_playing: bool,        // Whether the arpeggio is currently playing.
     pub current_index: usize, // The position in the arpeggiated chord.
 }
 
 impl Default for ArpProcessor {
     fn default() -> Self {
-        Self {
-            arp_playing: false,
-            current_index: 0,
-        }
+        Self { current_index: 0 }
     }
 }
 
 impl MidiProcessor for ArpProcessor {
-    fn process(&mut self, notes_state: &NotesState, _nb_samples: usize) -> ProcessStatus {
+    fn process(
+        &mut self,
+        _context: &mut impl ProcessContext<MidiTransposer>,
+        _notes_state: &NotesState,
+        _nb_samples: usize,
+    ) -> ProcessStatus {
         ProcessStatus::Normal
     }
 
-    fn arp_reset(&mut self, _on_off: bool) {
+    fn arp_reset(&mut self, _on_off: bool, _notes_state: &NotesState) {
         // todo!("Implement the arp reset")
     }
 }

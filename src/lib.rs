@@ -15,26 +15,41 @@ enum ProcessorType {
     Arpeggio,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+enum NoteTrigger {
+    Play,
+    Stop,
+}
+
+#[derive(Debug)]
 struct NotesState {
+    pub trigger: Option<NoteTrigger>,
     pub notes_held: Vec<NoteInfo>,
     pub current_note_held: Option<NoteInfo>,
-    pub current_chord: u128,
+    pub current_chord: Option<u128>,
+    pub previous_chord: Option<u128>,
 }
 
 impl Default for NotesState {
     fn default() -> Self {
         Self {
-            notes_held: Vec::with_capacity(24),
+            trigger: None,
+            notes_held: Vec::with_capacity(48), // Just in case the user has lots of fingers
             current_note_held: None,
-            current_chord: 0,
+            current_chord: None,
+            previous_chord: None,
         }
     }
 }
 
 pub(crate) trait MidiProcessor {
-    fn process(&mut self, notes_state: &NotesState, nb_samples: usize) -> ProcessStatus;
-    fn arp_reset(&mut self, on_off: bool);
+    fn process(
+        &mut self,
+        context: &mut impl ProcessContext<MidiTransposer>,
+        notes_state: &NotesState,
+        nb_samples: usize,
+    ) -> ProcessStatus;
+    fn arp_reset(&mut self, on_off: bool, notes_state: &NotesState);
 }
 
 struct MidiTransposer {
@@ -69,24 +84,32 @@ struct MidiTransposer {
 impl MidiTransposer {
     fn process_note_on(&mut self, note_info: &NoteInfo) {
         self.notes_state.notes_held.push(*note_info);
+        self.notes_state.previous_chord = self.notes_state.current_chord;
         self.notes_state.current_chord =
-            ChordProcessor::build_chord(self.params.clone(), note_info);
+            Some(ChordProcessor::build_chord(self.params.clone(), note_info));
         self.notes_state.current_note_held = Some(*note_info);
+        self.notes_state.trigger = Some(NoteTrigger::Play);
     }
 
     fn process_note_off(&mut self, note_info: &NoteInfo) {
+        self.notes_state.previous_chord = self.notes_state.current_chord;
+
+        // Remove the pressed key from the list of held notes.
         self.notes_state
             .notes_held
             .retain(|n| n.note != note_info.note);
+
         if self.notes_state.notes_held.is_empty() {
             self.notes_state.current_note_held = None;
-            self.notes_state.current_chord = 0;
+            self.notes_state.current_chord = None;
+            self.notes_state.trigger = Some(NoteTrigger::Stop);
         } else {
             self.notes_state.current_note_held = Some(*self.notes_state.notes_held.last().unwrap());
-            self.notes_state.current_chord = ChordProcessor::build_chord(
+            self.notes_state.current_chord = Some(ChordProcessor::build_chord(
                 self.params.clone(),
                 self.notes_state.current_note_held.as_ref().unwrap(),
-            );
+            ));
+            self.notes_state.trigger = Some(NoteTrigger::Play);
         }
     }
 
@@ -97,8 +120,10 @@ impl MidiTransposer {
         } else {
             ProcessorType::Chord
         };
-        self.chord_processor.arp_reset(arp_activated);
-        self.arp_processor.arp_reset(arp_activated);
+        self.chord_processor
+            .arp_reset(arp_activated, &self.notes_state);
+        self.arp_processor
+            .arp_reset(arp_activated, &self.notes_state);
     }
 }
 
@@ -132,13 +157,7 @@ impl Plugin for MidiTransposer {
 
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
-    // If the plugin can send or receive SysEx messages, it can define a type to wrap around those
-    // messages here. The type implements the `SysExMessage` trait, which allows conversion to and
-    // from plain byte buffers.
     type SysExMessage = ();
-    // More advanced plugins can use this to run expensive background tasks. See the field's
-    // documentation for more information. `()` means that the plugin does not have any background
-    // tasks.
     type BackgroundTask = ();
 
     fn params(&self) -> Arc<dyn Params> {
@@ -169,6 +188,9 @@ impl Plugin for MidiTransposer {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        // Reset the note trigger for the processors.
+        self.notes_state.trigger = None;
+
         // Check if the arpeggiator has been turned on/off to reset it and notify the processors.
         if self
             .should_reset_arp
@@ -231,12 +253,14 @@ impl Plugin for MidiTransposer {
         }
 
         match self.processor_type {
-            ProcessorType::Chord => self
-                .chord_processor
-                .process(&self.notes_state, buffer.samples()),
-            ProcessorType::Arpeggio => self
-                .arp_processor
-                .process(&self.notes_state, buffer.samples()),
+            ProcessorType::Chord => {
+                self.chord_processor
+                    .process(context, &self.notes_state, buffer.samples())
+            }
+            ProcessorType::Arpeggio => {
+                self.arp_processor
+                    .process(context, &self.notes_state, buffer.samples())
+            }
         }
     }
 }
