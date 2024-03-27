@@ -21,13 +21,19 @@ enum NoteTrigger {
     Stop,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct Chord {
+    pub notes: u128,
+    pub channel: u8,
+}
+
 #[derive(Debug)]
 struct NotesState {
     pub trigger: Option<NoteTrigger>,
     pub notes_held: Vec<NoteInfo>,
     pub current_note_held: Option<NoteInfo>,
-    pub current_chord: Option<u128>,
-    pub previous_chord: Option<u128>,
+    pub current_chord: Option<Chord>,
+    pub previous_chord: Option<Chord>,
 }
 
 impl Default for NotesState {
@@ -49,7 +55,12 @@ pub(crate) trait MidiProcessor {
         notes_state: &NotesState,
         nb_samples: usize,
     ) -> ProcessStatus;
-    fn arp_reset(&mut self, on_off: bool, notes_state: &NotesState);
+    fn arp_toggled(
+        &mut self,
+        context: &mut impl ProcessContext<MidiTransposer>,
+        on_off: bool,
+        notes_state: &NotesState,
+    );
 }
 
 struct MidiTransposer {
@@ -113,7 +124,7 @@ impl MidiTransposer {
         }
     }
 
-    fn update_processor(&mut self) {
+    fn update_processor(&mut self, context: &mut impl ProcessContext<MidiTransposer>) {
         let arp_activated = self.params.arp.activated.value();
         self.processor_type = if arp_activated {
             ProcessorType::Arpeggio
@@ -121,20 +132,22 @@ impl MidiTransposer {
             ProcessorType::Chord
         };
         self.chord_processor
-            .arp_reset(arp_activated, &self.notes_state);
+            .arp_toggled(context, arp_activated, &self.notes_state);
         self.arp_processor
-            .arp_reset(arp_activated, &self.notes_state);
+            .arp_toggled(context, arp_activated, &self.notes_state);
     }
 }
 
 impl Default for MidiTransposer {
     fn default() -> Self {
         let should_reset_arp = Arc::new(AtomicBool::new(true));
+        let params = Arc::new(MidiTransposerParams::new(should_reset_arp.clone()));
+        let arp_processor = ArpProcessor::new(Arc::clone(&params.arp));
         Self {
-            params: Arc::new(MidiTransposerParams::new(should_reset_arp.clone())),
+            params,
             processor_type: ProcessorType::Chord,
             chord_processor: ChordProcessor::default(),
-            arp_processor: ArpProcessor::default(),
+            arp_processor,
             should_reset_arp,
             notes_state: NotesState::default(),
         }
@@ -167,19 +180,12 @@ impl Plugin for MidiTransposer {
     fn initialize(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
-        _buffer_config: &BufferConfig,
+        buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
-        // Resize buffers and perform other potentially expensive initialization operations here.
-        // The `reset()` function is always called right after this function. You can remove this
-        // function if you do not need it.
         nih_trace!("Initializing MidiTransposer");
+        self.arp_processor.sample_rate = buffer_config.sample_rate;
         true
-    }
-
-    fn reset(&mut self) {
-        // Reset buffers and envelopes here. This can be called from the audio thread and may not
-        // allocate. You can remove this function if you do not need it.
     }
 
     fn process(
@@ -202,7 +208,7 @@ impl Plugin for MidiTransposer {
             )
             .is_ok()
         {
-            self.update_processor();
+            self.update_processor(context);
         }
 
         // Process the incoming events.
@@ -216,32 +222,33 @@ impl Plugin for MidiTransposer {
                 continue;
             }
 
-            let output_channel = self.params.out_channel.value() as u8;
+            // The output channel will be the same as the input channel if the output channel param is set to 0
+            // Otherwise, it will be the value of the output channel param - 1 (because channels go from 0 to 15)
+            let output_channel = match self.params.out_channel.value() {
+                0 => {
+                    if let Some(channel) = event.channel() {
+                        channel
+                    } else {
+                        0
+                    }
+                }
+                _ => self.params.out_channel.value() as u8 - 1,
+            };
+
             match event {
                 NoteEvent::NoteOn {
                     note,
                     timing,
                     velocity,
-                    channel,
                     ..
                 }
                 | NoteEvent::NoteOff {
                     note,
                     timing,
                     velocity,
-                    channel,
                     ..
                 } => {
-                    let note_info = NoteInfo::new(
-                        note,
-                        if output_channel > 0 {
-                            output_channel
-                        } else {
-                            channel
-                        },
-                        velocity,
-                        timing,
-                    );
+                    let note_info = NoteInfo::new(note, output_channel, velocity, timing);
                     match event {
                         NoteEvent::NoteOn { .. } => self.process_note_on(&note_info),
                         NoteEvent::NoteOff { .. } => self.process_note_off(&note_info),

@@ -16,11 +16,6 @@ impl NoteInfo {
         }
     }
 
-    pub fn transposed(&mut self, transposition: i8) -> &mut Self {
-        self.note = (self.note as i8 + transposition) as u8;
-        self
-    }
-
     pub fn with_transposition(&self, transposition: i8) -> Self {
         Self {
             note: (self.note as i8 + transposition) as u8,

@@ -51,7 +51,7 @@ pub struct MidiTransposerParams {
     #[id = "octave_transpose"]
     pub octave_transpose: IntParam,
     #[nested(group = "Arpeggiator")]
-    pub arp: ArpParams,
+    pub arp: Arc<ArpParams>,
     #[nested(array, group = "Notes")]
     pub notes: [NoteParam; 12],
 }
@@ -68,14 +68,14 @@ impl MidiTransposerParams {
                 0,
                 IntRange::Linear { min: -1, max: 4 },
             ),
-            arp: ArpParams {
+            arp: Arc::new(ArpParams {
                 activated: BoolParam::new("Arp On/Off", false).with_callback(Arc::new(move |_| {
                     should_reset_arp.store(true, std::sync::atomic::Ordering::Release);
                 })),
                 synced: BoolParam::new("Arp Sync", false),
                 speed: FloatParam::new("Arp Speed", 1.0, FloatRange::Linear { min: 0.1, max: 1.0 }),
                 rate: IntParam::new("Arp Rate", 0, IntRange::Linear { min: 0, max: 8 }),
-            },
+            }),
             notes: all_notes.map(|note| NoteParam {
                 active: BoolParam::new(format!("Activate {}", NOTE_NAMES[note - 1]), true),
                 transpose: IntParam::new(
